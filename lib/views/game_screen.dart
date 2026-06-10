@@ -2,6 +2,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'widgets/frame_animation.dart';
 
+import '../models/boss_type.dart';
 import '../models/game_enums.dart';
 import '../rendering/game_layout.dart';
 import '../rendering/game_painter.dart';
@@ -58,13 +59,31 @@ class _GameScreenState extends State<GameScreen>
             // Calcular posiciones de corredores y monstruo si corresponde
             final List<Widget> characterWidgets = [];
 
-            if (state == GameState.playing || state == GameState.boss) {
+            if (state == GameState.playing ||
+                state == GameState.boss ||
+                state == GameState.bossOutro) {
+              final outroP = state == GameState.bossOutro
+                  ? _viewModel.bossOutroProgress
+                  : 0.0;
               final pathW = size.width * 0.76;
-              final cx = state == GameState.playing
-                  ? (size.width / 2 - pathW / 2) + pathW * _viewModel.playerX.clamp(0.0, 1.0)
+              final cx = (state == GameState.playing)
+                  ? (size.width / 2 - pathW / 2) +
+                      pathW * _viewModel.playerX.clamp(0.0, 1.0)
                   : size.width / 2;
-              final cy = size.height * (state == GameState.playing ? 0.76 : 0.82);
-              final displayCount = _viewModel.crowdCount.clamp(1, 40);
+              final double cy;
+              if (state == GameState.bossOutro) {
+                if (_viewModel.playerWins) {
+                  // Rebote de celebración: múltiples saltos que se amortiguan
+                  cy = size.height * 0.82 -
+                      sin(outroP * pi * 5).abs() * 40 * (1.0 - outroP);
+                } else {
+                  // Caída fuera de pantalla
+                  cy = size.height * 0.82 + outroP * size.height * 0.30;
+                }
+              } else {
+                cy = size.height * (state == GameState.playing ? 0.76 : 0.82);
+              }
+              final displayCount = max(1, _viewModel.crowdCount ~/ 10);
               final maxSpread = state == GameState.playing ? pathW * 0.38 : size.width * 0.26;
 
               final positions = GameLayout.crowdPositions(
@@ -75,11 +94,30 @@ class _GameScreenState extends State<GameScreen>
               );
 
               final baseSz = (28.0 - displayCount * 0.15).clamp(14.0, 28.0);
-              final sz = baseSz * 7.5;
+              final sz = baseSz * 5.0;
 
               for (var i = 0; i < positions.length; i++) {
                 final pos = positions[i];
                 final runnerHeight = sz * 1.34;
+                final Widget runnerWidget;
+                if (state == GameState.bossOutro) {
+                  runnerWidget = Image.asset(
+                    _viewModel.playerWins
+                        ? 'assets/images/runner/runner_victory.png'
+                        : 'assets/images/runner/runner_defeat.png',
+                    fit: BoxFit.fill,
+                    filterQuality: FilterQuality.none,
+                  );
+                } else {
+                  runnerWidget = FrameAnimation(
+                    basePath: 'assets/images/runner/runner_',
+                    frameCount: 5,
+                    animTime: _viewModel.animTime,
+                    indexOffset: i * 3,
+                    ticksPerFrame: 5,
+                    fit: BoxFit.fill,
+                  );
+                }
                 characterWidgets.add(
                   Positioned(
                     left: pos.dx - sz / 2,
@@ -87,45 +125,87 @@ class _GameScreenState extends State<GameScreen>
                     width: sz,
                     height: runnerHeight,
                     child: IgnorePointer(
-                      child: FrameAnimation(
-                        basePath: 'assets/images/runner/runner_',
-                        frameCount: 5,
-                        animTime: _viewModel.animTime,
-                        indexOffset: i * 3,
-                        ticksPerFrame: 5,
-                        fit: BoxFit.fill,
-                      ),
+                      child: runnerWidget,
                     ),
                   ),
                 );
               }
             }
 
-            if (state == GameState.boss) {
+            if (state == GameState.boss || state == GameState.bossOutro) {
+              final outroP = state == GameState.bossOutro
+                  ? _viewModel.bossOutroProgress
+                  : 0.0;
               final cx = size.width / 2;
-              final monsterX = cx + (_viewModel.bossShake > 0.5 ? (Random().nextDouble() - 0.5) * _viewModel.bossShake : 0);
-              final monsterY = size.height * 0.33 + sin(_viewModel.monBob) * 6;
-              final scale = (size.height * 0.42 / 280).clamp(0.5, 1.3);
+              final baseMonsterY = state == GameState.bossOutro
+                  ? (_viewModel.playerWins
+                      ? size.height * 0.33 + outroP * size.height * 0.42
+                      : size.height * 0.33 - outroP * 20)
+                  : size.height * 0.33 + sin(_viewModel.monBob) * 6;
+              final baseScale = (size.height * 0.42 / 280).clamp(0.5, 1.3);
+              final outroScaleMult = state == GameState.bossOutro
+                  ? (_viewModel.playerWins
+                      ? (1.0 - outroP * 0.88).clamp(0.02, 1.0)
+                      : (1.0 + outroP * 0.28))
+                  : 1.0;
+              final scale = baseScale * outroScaleMult;
               final monsterSizeW = 160.0 * scale;
               final monsterSizeH = 180.0 * scale;
+              final bossType = _viewModel.levels[_viewModel.currentLevel].bossType;
+              final shake = (state == GameState.boss && _viewModel.bossShake > 0.5)
+                  ? (Random().nextDouble() - 0.5) * _viewModel.bossShake
+                  : 0.0;
 
-              characterWidgets.add(
-                Positioned(
-                  left: monsterX - monsterSizeW / 2,
-                  top: monsterY - monsterSizeH / 2,
+              // Helper para crear un widget de monstruo
+              Widget buildMonster(String basePath, int frames, double x, double y, String bossKey) {
+                final Widget monsterWidget;
+                if (state == GameState.bossOutro) {
+                  final pose = _viewModel.playerWins ? 'defeat' : 'victory';
+                  monsterWidget = Image.asset(
+                    'assets/images/$bossKey/${bossKey}_$pose.png',
+                    fit: BoxFit.fill,
+                    filterQuality: FilterQuality.none,
+                  );
+                } else {
+                  monsterWidget = FrameAnimation(
+                    basePath: basePath,
+                    frameCount: frames,
+                    animTime: _viewModel.animTime,
+                    ticksPerFrame: 12,
+                    fit: BoxFit.fill,
+                  );
+                }
+
+                return Positioned(
+                  left: x - monsterSizeW / 2,
+                  top: y - monsterSizeH / 2,
                   width: monsterSizeW,
                   height: monsterSizeH,
                   child: IgnorePointer(
-                    child: FrameAnimation(
-                      basePath: 'assets/images/monster/monster_',
-                      frameCount: 2,
-                      animTime: _viewModel.animTime,
-                      ticksPerFrame: 12,
-                      fit: BoxFit.fill,
-                    ),
+                    child: monsterWidget,
                   ),
-                ),
-              );
+                );
+              }
+
+              switch (bossType) {
+                case BossType.bossA:
+                  characterWidgets.add(
+                    buildMonster('assets/images/monster/monster_', 2, cx + shake, baseMonsterY, 'monster'),
+                  );
+                case BossType.bossB:
+                  characterWidgets.add(
+                    buildMonster('assets/images/monster_b/monster_b_', 2, cx + shake, baseMonsterY, 'monster_b'),
+                  );
+                case BossType.bossDual:
+                  // Dos bosses lado a lado
+                  final offsetX = monsterSizeW * 0.7;
+                  characterWidgets.add(
+                    buildMonster('assets/images/monster/monster_', 2, cx - offsetX + shake, baseMonsterY, 'monster'),
+                  );
+                  characterWidgets.add(
+                    buildMonster('assets/images/monster_b/monster_b_', 2, cx + offsetX + shake, baseMonsterY, 'monster_b'),
+                  );
+              }
             }
 
             return Stack(

@@ -132,6 +132,12 @@ class GameViewModel extends ChangeNotifier {
   double get bossShake => _bossShake;
   bool get bossFlash => _bossFlash;
 
+  // ──────────────────────── Fase "bossOutro" ────────────────────────
+  double _bossOutroProgress = 0.0;
+  Timer? _bossOutroTimer;
+
+  double get bossOutroProgress => _bossOutroProgress;
+
   // ─────────────────────── Fase "level intro" ───────────────────────
   double _introProgress = 0;
   Timer? _introTimer;
@@ -236,7 +242,7 @@ class GameViewModel extends ChangeNotifier {
   void _startBoss() {
     _cancelTimersAndAnimation();
     final lvl = _level;
-    _playerWins = _crowdCount >= lvl.minCrowd;
+    _playerWins = false;
     _state = GameState.boss;
     _bossHP = 100;
     _bossMaxHP = 100;
@@ -259,6 +265,26 @@ class GameViewModel extends ChangeNotifier {
     });
   }
 
+  void _startBossOutro() {
+    _state = GameState.bossOutro;
+    _bossOutroProgress = 0.0;
+    notifyListeners();
+
+    const totalMs = 3500;
+    const stepMs = 16;
+    var elapsed = 0;
+    _bossOutroTimer = Timer.periodic(const Duration(milliseconds: stepMs), (t) {
+      elapsed += stepMs;
+      _animTime++;
+      _bossOutroProgress = (elapsed / totalMs).clamp(0.0, 1.0);
+      notifyListeners();
+      if (_bossOutroProgress >= 1.0) {
+        t.cancel();
+        _showResult();
+      }
+    });
+  }
+
   void _showResult() {
     _cancelTimersAndAnimation();
     _isChampion = _playerWins && _currentLevel == _lastLevelIndex;
@@ -274,11 +300,6 @@ class GameViewModel extends ChangeNotifier {
     _monBob += 0.04;
     _animTime++;
 
-    if (_playerWins) {
-      _bossHP -= 100.0 / (_bossDuration / 0.016);
-      if (_bossHP < 0) _bossHP = 0;
-    }
-
     _advanceBullets();
 
     if (_bossFlash) {
@@ -290,7 +311,8 @@ class GameViewModel extends ChangeNotifier {
     if (_bossTimer <= 0) {
       _bossTickTimer?.cancel();
       _autoShootTimer?.cancel();
-      _showResult();
+      _playerWins = false;
+      _startBossOutro();
       return;
     }
     notifyListeners();
@@ -314,8 +336,14 @@ class GameViewModel extends ChangeNotifier {
     );
   }
 
-  /// Lanza un proyectil desde el grupo hacia el monstruo.
+  /// Lanza un proyectil y aplica daño al jefe escalado por el tamaño del grupo.
+  ///
+  /// Fórmula: cada toque hace `100 / (bossSecs × 3) × (crowd / minCrowd)` de daño.
+  /// Con exactamente minCrowd se necesitan `bossSecs × 3` toques para ganar;
+  /// el auto-disparo (cada 500 ms) aporta `bossSecs × 2` toques, así que el
+  /// jugador debe tocar manualmente para completar la victoria.
   void shoot() {
+    if (_state != GameState.boss) return;
     final size = _screenSize;
     if (size == Size.zero) return;
 
@@ -331,11 +359,25 @@ class GameViewModel extends ChangeNotifier {
         speed: 8.0,
       ),
     );
-    if (_playerWins) {
-      _bossFlash = true;
-      _bossFlashFrames = 4;
-      _bossShake = 8;
+
+    final minCrowd = _level.minCrowd.toDouble();
+    final damagePerTap =
+        (100.0 / (_level.bossSecs * 3.0)) *
+        (_crowdCount / minCrowd).clamp(0.2, 5.0);
+    _bossHP = (_bossHP - damagePerTap).clamp(0.0, _bossMaxHP);
+
+    _bossFlash = true;
+    _bossFlashFrames = 4;
+    _bossShake = 8;
+
+    if (_bossHP <= 0) {
+      _bossTickTimer?.cancel();
+      _autoShootTimer?.cancel();
+      _playerWins = true;
+      _startBossOutro();
+      return;
     }
+
     notifyListeners();
   }
 
@@ -355,7 +397,9 @@ class GameViewModel extends ChangeNotifier {
       // Zona muerta: el jugador no eligió un lado claro → penalización del 30%
       if ((_playerX - 0.5).abs() < _centreDeadZone) {
         final before = _crowdCount;
-        final penalty = (_crowdCount * 0.30).ceil().clamp(1, _crowdCount - 1);
+        final penalty = _crowdCount <= 1
+            ? 0
+            : (_crowdCount * 0.30).ceil().clamp(1, _crowdCount - 1);
         _crowdCount = (_crowdCount - penalty).clamp(1, 9999);
         _decisions.add(DecisionRecord('¡Indeciso!', 'Sin decisión', _crowdCount - before));
         _spawnGateEffects(_crowdCount - before);
@@ -465,6 +509,7 @@ class GameViewModel extends ChangeNotifier {
       case GameState.result:
         _handleResultTap(localPosition, size);
       case GameState.levelIntro:
+      case GameState.bossOutro:
         break;
     }
   }
@@ -508,6 +553,7 @@ class GameViewModel extends ChangeNotifier {
     _autoShootTimer?.cancel();
     _introTimer?.cancel();
     _gameTickTimer?.cancel();
+    _bossOutroTimer?.cancel();
   }
 
   @override

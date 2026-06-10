@@ -2,6 +2,7 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 
+import '../models/boss_type.dart';
 import '../models/decision_record.dart';
 import '../models/effects.dart';
 import '../models/game_enums.dart';
@@ -47,6 +48,7 @@ class GamePainter extends CustomPainter {
   bool get isChampion => vm.isChampion;
   int get highestUnlockedLevel => vm.highestUnlockedLevel;
   bool get isInDangerZone => vm.isInDangerZone;
+  double get bossOutroProgress => vm.bossOutroProgress;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -62,6 +64,8 @@ class GamePainter extends CustomPainter {
         _drawPlaying(canvas, size);
       case GameState.boss:
         _drawBoss(canvas, size);
+      case GameState.bossOutro:
+        _drawBossOutro(canvas, size);
       case GameState.result:
         _drawResult(canvas, size);
     }
@@ -469,7 +473,7 @@ class GamePainter extends CustomPainter {
     // Grupo
     final crowdCx = pathL + pathW * playerX.clamp(0.0, 1.0);
     final crowdY = size.height * 0.76;
-    _drawCrowd(canvas, crowdCx, crowdY, crowdCount, min(40, crowdCount),
+    _drawCrowd(canvas, crowdCx, crowdY, crowdCount, max(1, crowdCount ~/ 10),
         pathW * 0.38, animTime);
 
     // Textos flotantes
@@ -681,6 +685,14 @@ class GamePainter extends CustomPainter {
 
     final cx = size.width / 2;
     final lvl = levels[level];
+    final bossType = lvl.bossType;
+
+    // Título según el tipo de boss
+    final bossTitle = switch (bossType) {
+      BossType.bossA => '👾 MONSTRUO · Nv.${level + 1}',
+      BossType.bossB => '😈 DEMONIO · Nv.${level + 1}',
+      BossType.bossDual => '⚔️ ¡BATALLA FINAL! · Nv.${level + 1}',
+    };
 
     // Barra de vida del monstruo
     final hpBarW = size.width * 0.8;
@@ -688,7 +700,7 @@ class GamePainter extends CustomPainter {
     const hpBarY = 70.0;
     final hpBarL = cx - hpBarW / 2;
 
-    _drawText(canvas, '👾 MONSTRUO · Nv.${level + 1}', Offset(cx, hpBarY - 24),
+    _drawText(canvas, bossTitle, Offset(cx, hpBarY - 24),
         fontSize: 18, color: Colors.white70, center: true);
 
     canvas.drawRRect(
@@ -739,38 +751,49 @@ class GamePainter extends CustomPainter {
         fontSize: 24, color: timerColor, fontWeight: FontWeight.w700,
         center: true);
 
-    // Monstruo
+    // Posiciones de los monstruos (manejadas por game_screen.dart como sprites)
     final monsterY = size.height * 0.33 + sin(monBob) * 6;
-    final monsterX = cx +
-        (bossShake > 0.5
-            ? (Random(animTime).nextDouble() - 0.5) * bossShake
-            : 0);
     final scale = (size.height * 0.42 / 280).clamp(0.5, 1.3);
-    // _drawMonster(canvas, monsterX, monsterY, scale, bossFlash, lvl.bossColor); // Rendered via Lottie in game_screen.dart
+    final monsterSizeW = 160.0 * scale;
+    final shakeOffset = bossShake > 0.5
+        ? (Random(animTime).nextDouble() - 0.5) * bossShake
+        : 0.0;
 
-    // Escudo si aún no se gana
-    if (!playerWins) {
-      final shieldOpacity =
-          (sin(animTime * 0.06) * 0.15 + 0.25).clamp(0.0, 1.0);
-      canvas.drawCircle(
-        Offset(monsterX, monsterY),
-        80 * scale,
-        Paint()
-          ..shader = RadialGradient(
-            colors: [
-              GamePalette.blue.withValues(alpha: shieldOpacity),
-              Colors.transparent,
-            ],
-          ).createShader(Rect.fromCircle(
-              center: Offset(monsterX, monsterY), radius: 80 * scale)),
-      );
+    // Calcular posiciones de monstruo(s) para escudos e insignias
+    final List<Offset> monsterPositions = switch (bossType) {
+      BossType.bossA => [Offset(cx + shakeOffset, monsterY)],
+      BossType.bossB => [Offset(cx + shakeOffset, monsterY)],
+      BossType.bossDual => [
+        Offset(cx - monsterSizeW * 0.7 + shakeOffset, monsterY),
+        Offset(cx + monsterSizeW * 0.7 + shakeOffset, monsterY),
+      ],
+    };
+
+    // Escudo y badge para cada monstruo
+    for (final mPos in monsterPositions) {
+      // Escudo si aún no se gana
+      if (!playerWins) {
+        final shieldOpacity =
+            (sin(animTime * 0.06) * 0.15 + 0.25).clamp(0.0, 1.0);
+        canvas.drawCircle(
+          mPos,
+          80 * scale,
+          Paint()
+            ..shader = RadialGradient(
+              colors: [
+                GamePalette.blue.withValues(alpha: shieldOpacity),
+                Colors.transparent,
+              ],
+            ).createShader(Rect.fromCircle(center: mPos, radius: 80 * scale)),
+        );
+      }
+
+      // Insignia sobre el monstruo
+      final badgeColor =
+          playerWins ? GamePalette.positive : const Color(0xFFF87171);
+      _drawChip(canvas, mPos.dx, mPos.dy - 110 * scale, '👥 $crowdCount',
+          badgeColor);
     }
-
-    // Insignia sobre el monstruo (con mayor distancia vertical)
-    final badgeColor =
-        playerWins ? GamePalette.positive : const Color(0xFFF87171);
-    _drawChip(canvas, monsterX, monsterY - 110 * scale, '👥 $crowdCount',
-        badgeColor);
 
     // Proyectiles
     for (final b in bullets) {
@@ -785,7 +808,7 @@ class GamePainter extends CustomPainter {
 
     // Grupo en la parte inferior
     final crowdY = size.height * 0.82;
-    _drawCrowd(canvas, cx, crowdY, crowdCount, min(40, crowdCount),
+    _drawCrowd(canvas, cx, crowdY, crowdCount, max(1, crowdCount ~/ 10),
         size.width * 0.35, animTime);
 
     // Pista
@@ -794,6 +817,244 @@ class GamePainter extends CustomPainter {
         fontSize: 18,
         color: Colors.white.withValues(alpha: hintOp),
         center: true);
+  }
+
+  // ═══════════════════════════ OUTRO DEL JEFE ══════════════════════
+
+  void _drawBossOutro(Canvas canvas, Size size) {
+    final p = bossOutroProgress;
+    final cx = size.width / 2;
+
+    // Fondo base del combate
+    canvas.drawRect(
+      Rect.fromLTWH(0, 0, size.width, size.height),
+      Paint()
+        ..shader = const RadialGradient(
+          radius: 1.2,
+          colors: [Color(0xFF1A0A2E), Color(0xFF060612)],
+        ).createShader(Rect.fromLTWH(0, 0, size.width, size.height)),
+    );
+
+    if (playerWins) {
+      _drawVictoryOutro(canvas, size, cx, p);
+    } else {
+      _drawDefeatOutro(canvas, size, cx, p);
+    }
+  }
+
+  void _drawVictoryOutro(Canvas canvas, Size size, double cx, double p) {
+    // Flash blanco inicial
+    final flashAlpha = (1.0 - p / 0.12).clamp(0.0, 1.0);
+    if (flashAlpha > 0) {
+      canvas.drawRect(
+        Rect.fromLTWH(0, 0, size.width, size.height),
+        Paint()..color = Colors.white.withValues(alpha: flashAlpha * 0.85),
+      );
+    }
+
+    // Resplandor dorado expandiéndose
+    if (p > 0.08) {
+      final glowP = ((p - 0.08) / 0.5).clamp(0.0, 1.0);
+      final glowR = size.width * 0.8 * glowP;
+      if (glowR > 0) {
+        canvas.drawCircle(
+          Offset(cx, size.height * 0.42),
+          glowR,
+          Paint()
+            ..shader = RadialGradient(
+              colors: [
+                GamePalette.gold.withValues(alpha: 0.4 * (1.0 - glowP * 0.6)),
+                Colors.transparent,
+              ],
+            ).createShader(Rect.fromCircle(
+              center: Offset(cx, size.height * 0.42),
+              radius: glowR,
+            )),
+        );
+      }
+    }
+
+    // Confetti (seed fija → posiciones consistentes frame a frame)
+    final rng = Random(42);
+    const confettiColors = [
+      GamePalette.gold, GamePalette.positive, Colors.white,
+      GamePalette.violet, GamePalette.lilac, GamePalette.blue,
+    ];
+    for (var i = 0; i < 44; i++) {
+      final baseAngle = rng.nextDouble() * pi * 2;
+      final speed = 0.35 + rng.nextDouble() * 0.65;
+      final r = p * speed * size.height * 0.62;
+      final angle = baseAngle + p * 2.2;
+      final x = cx + cos(angle) * r;
+      final y = size.height * 0.42
+          - sin(angle) * r * 0.55
+          + p * size.height * 0.28 * speed;
+      final life = (1.0 - p * 0.85).clamp(0.0, 1.0);
+      if (life <= 0 || x < -10 || x > size.width + 10) continue;
+      final w = 4.0 + rng.nextDouble() * 5;
+      final h = 7.0 + rng.nextDouble() * 6;
+      canvas.save();
+      canvas.translate(x, y);
+      canvas.rotate(baseAngle + p * (i.isEven ? 5.0 : -4.0));
+      canvas.drawRect(
+        Rect.fromCenter(center: Offset.zero, width: w, height: h),
+        Paint()
+          ..color = confettiColors[i % confettiColors.length]
+              .withValues(alpha: life),
+      );
+      canvas.restore();
+    }
+
+    // Texto ¡VICTORIA! con escala elástica
+    if (p > 0.06) {
+      final textP = ((p - 0.06) / 0.32).clamp(0.0, 1.0);
+      final scale = Curves.elasticOut.transform(textP).clamp(0.0, 1.5);
+      final alpha = textP.clamp(0.0, 1.0);
+      if (scale > 0.01) {
+        _drawText(canvas, '¡VICTORIA!',
+          Offset(cx + 4, size.height * 0.38 + 4),
+          fontSize: 54 * scale,
+          color: GamePalette.gold.withValues(alpha: alpha * 0.55),
+          fontWeight: FontWeight.w900,
+          center: true,
+        );
+        _drawText(canvas, '¡VICTORIA!',
+          Offset(cx, size.height * 0.38),
+          fontSize: 54 * scale,
+          color: Colors.white.withValues(alpha: alpha),
+          fontWeight: FontWeight.w900,
+          center: true,
+        );
+      }
+    }
+
+    // Subtítulo con nombre del nivel
+    if (p > 0.45) {
+      final subP = ((p - 0.45) / 0.25).clamp(0.0, 1.0);
+      _drawText(canvas, 'Nivel ${level + 1} superado',
+        Offset(cx, size.height * 0.47),
+        fontSize: 20,
+        color: GamePalette.gold.withValues(alpha: subP),
+        center: true,
+      );
+    }
+
+    // Estrellas orbitando el texto
+    if (p > 0.28) {
+      final starAlpha = ((1.0 - p) * 2.5).clamp(0.0, 1.0);
+      final starP = ((p - 0.28) / 0.72).clamp(0.0, 1.0);
+      if (starAlpha > 0) {
+        for (var i = 0; i < 5; i++) {
+          final starAngle = i * (2 * pi / 5) + starP * pi * 3;
+          final starR = size.width * 0.27 * starP;
+          final sx = cx + cos(starAngle) * starR;
+          final sy = size.height * 0.38 + sin(starAngle) * starR * 0.32;
+          _drawText(canvas, '⭐', Offset(sx, sy),
+            fontSize: 18,
+            color: GamePalette.gold.withValues(alpha: starAlpha),
+            center: true,
+          );
+        }
+      }
+    }
+
+    // Fade a verde al final
+    if (p > 0.78) {
+      final fadeP = ((p - 0.78) / 0.22).clamp(0.0, 1.0);
+      canvas.drawRect(
+        Rect.fromLTWH(0, 0, size.width, size.height),
+        Paint()
+          ..color = const Color(0xFF052E16).withValues(alpha: fadeP * 0.55),
+      );
+    }
+  }
+
+  void _drawDefeatOutro(Canvas canvas, Size size, double cx, double p) {
+    // Flash rojo inicial
+    final flashAlpha = (1.0 - p / 0.10).clamp(0.0, 1.0);
+    if (flashAlpha > 0) {
+      canvas.drawRect(
+        Rect.fromLTWH(0, 0, size.width, size.height),
+        Paint()
+          ..color = GamePalette.danger.withValues(alpha: flashAlpha * 0.82),
+      );
+    }
+
+    // Viñeta roja oscura que crece
+    final vigAlpha = (p * 0.72).clamp(0.0, 0.72);
+    canvas.drawRect(
+      Rect.fromLTWH(0, 0, size.width, size.height),
+      Paint()
+        ..shader = RadialGradient(
+          radius: 0.88,
+          colors: [
+            Colors.transparent,
+            GamePalette.danger.withValues(alpha: vigAlpha),
+          ],
+        ).createShader(Rect.fromLTWH(0, 0, size.width, size.height)),
+    );
+
+    // Brasas cayendo
+    final rng = Random(13);
+    for (var i = 0; i < 20; i++) {
+      final ix = rng.nextDouble();
+      final iy = rng.nextDouble();
+      final speed = 0.3 + rng.nextDouble() * 0.7;
+      final x = size.width * ix;
+      final rawY = (p * speed + iy * 0.3) % 1.0;
+      final particleAlpha =
+          ((p - 0.12) * 2).clamp(0.0, 0.7) * rng.nextDouble();
+      if (particleAlpha <= 0) continue;
+      canvas.drawCircle(
+        Offset(x, size.height * rawY),
+        2.0 + rng.nextDouble() * 4,
+        Paint()
+          ..color = GamePalette.warning.withValues(alpha: particleAlpha),
+      );
+    }
+
+    // Texto DERROTA cayendo con rebote
+    if (p > 0.04) {
+      final textP = ((p - 0.04) / 0.38).clamp(0.0, 1.0);
+      final bounced = Curves.bounceOut.transform(textP);
+      final textY = -80.0 + (size.height * 0.38 + 80) * bounced;
+      final alpha = textP.clamp(0.0, 1.0);
+
+      _drawText(canvas, 'DERROTA',
+        Offset(cx + 4, textY + 4),
+        fontSize: 58,
+        color: Colors.black.withValues(alpha: alpha * 0.65),
+        fontWeight: FontWeight.w900,
+        center: true,
+      );
+      _drawText(canvas, 'DERROTA',
+        Offset(cx, textY),
+        fontSize: 58,
+        color: GamePalette.danger.withValues(alpha: alpha),
+        fontWeight: FontWeight.w900,
+        center: true,
+      );
+    }
+
+    // Subtítulo
+    if (p > 0.52) {
+      final subP = ((p - 0.52) / 0.28).clamp(0.0, 1.0);
+      _drawText(canvas, 'El grupo fue derrotado',
+        Offset(cx, size.height * 0.47),
+        fontSize: 19,
+        color: Colors.white54.withValues(alpha: subP),
+        center: true,
+      );
+    }
+
+    // Oscurecer al final
+    if (p > 0.78) {
+      final darkP = ((p - 0.78) / 0.22).clamp(0.0, 1.0);
+      canvas.drawRect(
+        Rect.fromLTWH(0, 0, size.width, size.height),
+        Paint()..color = Colors.black.withValues(alpha: darkP * 0.45),
+      );
+    }
   }
 
   // ═══════════════════════════════ RESULTADO ════════════════════════
@@ -959,7 +1220,7 @@ class GamePainter extends CustomPainter {
   void _drawCrowd(Canvas canvas, double cx, double cy, int count, int display,
       double maxSpread, int animTime) {
     if (display <= 0) return;
-    final radius = min(maxSpread, max(14.0, sqrt(display.toDouble()) * 7.5));
+    final radius = min(maxSpread, max(14.0, sqrt(display.toDouble()) * 60));
     final positions = <List<double>>[];
 
     for (var i = 0; i < display; i++) {

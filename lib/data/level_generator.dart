@@ -2,6 +2,7 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 
+import '../models/boss_type.dart';
 import '../models/gate.dart';
 import '../models/level_config.dart';
 
@@ -18,6 +19,7 @@ class _LevelRecipe {
   final Color bossColor;
   final String skulls;
   final int gateCount;
+  final BossType bossType;
 
   const _LevelRecipe(
     this.name,
@@ -27,6 +29,7 @@ class _LevelRecipe {
     this.bossColor,
     this.skulls,
     this.gateCount,
+    this.bossType,
   );
 }
 
@@ -43,16 +46,19 @@ class LevelGenerator {
   static const int _seed = 42;
 
   static const List<_LevelRecipe> _recipes = [
-    _LevelRecipe('El Camino del Aprendiz', 10, 18, 13, Color(0xFF22C55E), '😈', 4),
-    _LevelRecipe('La Encrucijada', 12, 25, 12, Color(0xFF3B82F6), '😈😈', 5),
-    _LevelRecipe('El Bosque Oscuro', 14, 30, 11, Color(0xFF8B5CF6), '😈😈', 5),
-    _LevelRecipe('Las Arenas de la Trampa', 15, 35, 11, Color(0xFFEF4444), '😈😈😈', 6),
-    _LevelRecipe('El Laberinto sin Salida', 16, 40, 10, Color(0xFFF97316), '😈😈😈', 7),
-    _LevelRecipe('La Caverna Maldita', 18, 45, 9, Color(0xFF6366F1), '😈😈😈😈', 7),
-    _LevelRecipe('El Volcán en Erupción', 20, 50, 9, Color(0xFFDC2626), '😈😈😈😈', 8),
-    _LevelRecipe('La Tormenta de Acero', 22, 55, 8, Color(0xFF0EA5E9), '😈😈😈😈😈', 8),
-    _LevelRecipe('El Abismo Eterno', 24, 60, 7, Color(0xFF7C2D12), '😈😈😈😈😈', 9),
-    _LevelRecipe('¡El Desafío Legendario!', 25, 70, 6, Color(0xFF1C1917), '😈😈😈😈😈😈', 10),
+    // Niveles 1–5: Boss A (monstruo verde)
+    _LevelRecipe('El Camino del Aprendiz', 1, 15, 13, Color(0xFF22C55E), '😈', 4, BossType.bossA),
+    _LevelRecipe('La Encrucijada', 1, 20, 12, Color(0xFF3B82F6), '😈😈', 5, BossType.bossA),
+    _LevelRecipe('El Bosque Oscuro', 1, 25, 11, Color(0xFF8B5CF6), '😈😈', 5, BossType.bossA),
+    _LevelRecipe('Las Arenas de la Trampa', 1, 30, 11, Color(0xFFEF4444), '😈😈😈', 6, BossType.bossA),
+    _LevelRecipe('El Laberinto sin Salida', 1, 35, 10, Color(0xFFF97316), '😈😈😈', 7, BossType.bossA),
+    // Niveles 6–9: Boss B (demonio púrpura)
+    _LevelRecipe('La Caverna Maldita', 1, 40, 9, Color(0xFF6366F1), '😈😈😈😈', 7, BossType.bossB),
+    _LevelRecipe('El Volcán en Erupción', 1, 45, 9, Color(0xFFDC2626), '😈😈😈😈', 8, BossType.bossB),
+    _LevelRecipe('La Tormenta de Acero', 1, 50, 8, Color(0xFF0EA5E9), '😈😈😈😈😈', 8, BossType.bossB),
+    _LevelRecipe('El Abismo Eterno', 1, 55, 7, Color(0xFF7C2D12), '😈😈😈😈😈', 9, BossType.bossB),
+    // Nivel 10: Ambos bosses simultáneamente
+    _LevelRecipe('¡El Desafío Legendario!', 1, 60, 6, Color(0xFF1C1917), '😈😈😈😈😈😈', 10, BossType.bossDual),
   ];
 
   /// Genera la lista completa de niveles configurados y listos para jugar.
@@ -68,6 +74,7 @@ class LevelGenerator {
         bossSecs: recipe.bossSecs,
         bossColor: recipe.bossColor,
         skulls: recipe.skulls,
+        bossType: recipe.bossType,
         gates: _makeGates(rng, recipe.gateCount, level),
       );
     }).toList();

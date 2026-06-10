@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'boss_type.dart';
 import 'gate.dart';
 
 /// Configuración de un nivel: parámetros de dificultad y sus puertas.
@@ -22,6 +23,9 @@ class LevelConfig {
   /// Indicador visual de dificultad (calaveras 😈).
   final String skulls;
 
+  /// Tipo de jefe que aparece al final del nivel.
+  final BossType bossType;
+
   /// Puertas de decisión que aparecerán durante el recorrido.
   final List<GateModel> gates;
 
@@ -32,6 +36,8 @@ class LevelConfig {
     required this.bossSecs,
     required this.bossColor,
     required this.skulls,
+    required this.bossType,
     required this.gates,
   });
 }
+

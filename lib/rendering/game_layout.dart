@@ -92,7 +92,7 @@ class GameLayout {
     required double maxSpread,
   }) {
     if (displayCount <= 0) return const [];
-    final radius = maxSpread.clamp(14.0, max(14.0, sqrt(displayCount) * 7.5));
+    final radius = maxSpread.clamp(14.0, max(14.0, sqrt(displayCount) * 60));
     final positions = <Offset>[];
 
     for (var i = 0; i < displayCount; i++) {
